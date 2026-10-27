@@ -2,14 +2,14 @@
 replicaCount: 2
 image:
   repository: mkurukuri/notesappfrontend
-  tag: '40460972754'
+  tag: '40461841675'
   pullPolicy: IfNotPresent
 containerPort: 3000
 service:
   type: ClusterIP
   port: 80
 configMap:
-  apiUrl: "https://api.example.invalid/api"
+  apiUrl: https://api.example.invalid/api
 env:
 - name: API_URL
   valueFrom:
