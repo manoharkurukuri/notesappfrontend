@@ -3,8 +3,9 @@ Namespace: {{ .Release.Namespace }}
 Image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
 
 Service port: {{ .Values.service.port }} -> container port: {{ .Values.containerPort }}
-The API_URL environment variable must reference a ConfigMap in {{ .Release.Namespace }}.
-By default, create notesappfrontend-config with the API_URL key before deploying.
+The chart creates notesappfrontend-config with API_URL from configMap.apiUrl.
+Replace the dummy configMap.apiUrl in values.yaml with your real public API URL.
+Configuration changes roll out new pods automatically.
 Readiness checks /api/runtime-config; startup and liveness checks use /.
 No custom ServiceAccount is created; service account token mounting is disabled.
 

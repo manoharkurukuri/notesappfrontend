@@ -63,18 +63,16 @@ If your Ingress routes `/api` to the backend, add a more specific route for
 
 ### Kubernetes ConfigMap
 
-Create a ConfigMap:
+The Helm chart creates `notesappfrontend-config` in the release namespace.
+Set its URL in `helm/notesappfrontend/values.yaml`:
 
 ```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: notesappfrontend-config
-data:
-  API_URL: "http://16.113.14.5/api"
+configMap:
+  apiUrl: "https://api.example.invalid/api"
 ```
 
-Reference it in your Deployment's container definition:
+The default is deliberately a dummy URL. Replace it with your browser-accessible
+backend URL before using the app. The Deployment already references the ConfigMap:
 
 ```yaml
 containers:
@@ -90,29 +88,26 @@ containers:
             key: API_URL
 ```
 
-Keep the ConfigMap and Deployment in the same namespace. After updating the
-ConfigMap, restart the Deployment's pods (for example,
-`kubectl rollout restart deployment/notesappfrontend`) and reload the browser.
-The same image can be used in every environment without rebuilding.
+Commit and push URL changes for Argo CD to sync them. A ConfigMap checksum in the
+Deployment automatically restarts pods when the chart configuration changes;
+reload the browser afterward. Do not edit the live ConfigMap directly because
+Argo CD self-healing will restore the Git value. The same image can be used in
+every environment without rebuilding.
 
 ### Helm deployment
 
-The chart already references the external `notesappfrontend-config` ConfigMap.
-Create it in the release namespace before installing:
+The chart manages the ConfigMap; no separate ConfigMap creation is needed:
 
 ```bash
-kubectl create namespace notesapp
-kubectl -n notesapp create configmap notesappfrontend-config \
-  --from-literal=API_URL=http://16.113.14.5/api
 helm lint helm/notesappfrontend
 helm upgrade --install notesappfrontend ./helm/notesappfrontend \
-  --namespace notesapp --set-string image.tag=v1 --wait
+  --namespace notesapp --create-namespace \
+  --set-string configMap.apiUrl=http://16.113.14.5/api --wait
 kubectl -n notesapp port-forward service/notesappfrontend 3000:80
 ```
 
-Skip the creation commands if the namespace and ConfigMap already exist.
-For CI-built images, replace `v1` with the published image tag (the GitHub Actions
-run ID). The workflow builds both amd64 and arm64 images and updates the chart
+The chart uses the image tag committed by CI (the GitHub Actions run ID).
+The workflow builds both amd64 and arm64 images and updates the chart
 tag, but applying that chart still requires Helm or a GitOps controller.
 
 The Service exposes port 80 and forwards to container port 3000. Overriding
@@ -130,9 +125,9 @@ Autoscaling is disabled by default. Enable it with
 `--set autoscaling.enabled=true` only when resource metrics are available in the
 cluster. Ingress and HTTPRoute are also disabled by default; configure the
 matching controller/Gateway and a real hostname before enabling either.
-After a ConfigMap update, use
-`kubectl -n notesapp rollout restart deployment/notesappfrontend` and reload the
-browser.
+After a chart-managed ConfigMap update, pods roll out automatically; reload the
+browser. Readiness validates the URL format, not backend connectivity, so the
+dummy URL allows startup but does not provide working API requests.
 
 ## GitHub Actions
 
