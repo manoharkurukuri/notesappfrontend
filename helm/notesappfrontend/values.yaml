@@ -1,0 +1,52 @@
+replicaCount: 2
+
+image:
+  repository: mkurukuri/notesappfrontend
+  tag: "v1"
+  pullPolicy: IfNotPresent
+
+containerPort: 3000
+
+service:
+  type: ClusterIP
+  port: 80
+
+env:
+  - name: API_URL
+    valueFrom:
+      configMapKeyRef:
+        name: notesappfrontend-config
+        key: API_URL
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 128Mi
+
+ingress:
+  enabled: false
+  className: ""
+  host: notesapp.local
+  path: /
+  pathType: Prefix
+
+httpRoute:
+  enabled: false
+  parentRefs:
+    - name: notesapp-gateway
+      sectionName: http
+  host: notesapp.local
+  path: /
+
+rollingUpdate:
+  maxSurge: 1
+  maxUnavailable: 0

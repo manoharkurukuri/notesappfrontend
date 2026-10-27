@@ -128,7 +128,7 @@ const LoginPage = () => {
 
         {/* Footer */}
         <p className="mt-5 text-center text-xs text-slate-400">
-          Don't have an account?{" "}
+          Don&apos;t have an account?{" "}
           <Link href="/get-started" className="text-sky-400 hover:text-sky-300 cursor-pointer">
             Register
           </Link>

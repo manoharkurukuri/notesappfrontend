@@ -1,0 +1,15 @@
+Release: {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+Image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+
+Service port: {{ .Values.service.port }} -> container port: {{ .Values.containerPort }}
+The API_URL environment variable must reference a ConfigMap in {{ .Release.Namespace }}.
+By default, create notesappfrontend-config with the API_URL key before deploying.
+Readiness checks /api/runtime-config; startup and liveness checks use /.
+No custom ServiceAccount is created; service account token mounting is disabled.
+
+Route resources are controlled by ingress.enabled or httpRoute.enabled.
+Check the matching controller or Gateway before enabling one.
+
+For local access:
+  kubectl --namespace {{ .Release.Namespace }} port-forward service/{{ include "notesappfrontend.fullname" . }} 3000:{{ .Values.service.port }}
