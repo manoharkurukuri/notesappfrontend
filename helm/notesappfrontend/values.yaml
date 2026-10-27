@@ -2,7 +2,7 @@
 replicaCount: 2
 image:
   repository: mkurukuri/notesappfrontend
-  tag: '40462491441'
+  tag: '40463101421'
   pullPolicy: IfNotPresent
 containerPort: 3000
 service:
