@@ -110,7 +110,15 @@ The chart uses the image tag committed by CI (the GitHub Actions run ID).
 The workflow builds both amd64 and arm64 images and updates the chart
 tag, but applying that chart still requires Helm or a GitOps controller.
 
-The Service exposes port 80 and forwards to container port 3000. Overriding
+The Service defaults to NodePort: node port 30080 forwards through Service port
+80 to container port 3000. After Argo CD syncs, run `kubectl get nodes -o wide`
+and open `http://<reachable-node-ip>:30080`. For Multipass, use a reachable VM/node
+IP, not the Service ClusterIP. Node networking and firewalls must allow TCP 30080.
+Set `service.nodePort` to another unused port in the cluster's NodePort range
+(normally 30000-32767) if needed. Set `service.type: ClusterIP` to disable NodePort
+exposure; port-forwarding still works.
+
+Overriding
 `containerPort` also updates the server's `PORT` environment variable; do not
 set `PORT` separately in `env`. Startup and liveness probes check `/`, while
 readiness checks `/api/runtime-config` so invalid API configuration prevents

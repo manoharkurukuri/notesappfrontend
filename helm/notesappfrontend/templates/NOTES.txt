@@ -14,3 +14,10 @@ Check the matching controller or Gateway before enabling one.
 
 For local access:
   kubectl --namespace {{ .Release.Namespace }} port-forward service/{{ include "notesappfrontend.fullname" . }} 3000:{{ .Values.service.port }}
+
+{{- if eq .Values.service.type "NodePort" }}
+For NodePort access:
+  kubectl get nodes -o wide
+  Open http://<reachable-node-ip>:{{ .Values.service.nodePort }}
+  The node IP must be reachable and its firewall must allow this TCP port.
+{{- end }}

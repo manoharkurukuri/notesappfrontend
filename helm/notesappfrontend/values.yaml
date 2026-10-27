@@ -6,8 +6,9 @@ image:
   pullPolicy: IfNotPresent
 containerPort: 3000
 service:
-  type: ClusterIP
+  type: NodePort
   port: 80
+  nodePort: 30080
 configMap:
   apiUrl: https://api.example.invalid/api
 env:
