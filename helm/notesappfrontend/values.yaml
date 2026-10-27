@@ -8,7 +8,7 @@ containerPort: 3000
 service:
   type: NodePort
   port: 80
-  nodePort: 30080
+  nodePort: 30081
 configMap:
   apiUrl: https://api.example.invalid/api
 env:
