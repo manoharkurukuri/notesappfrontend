@@ -18,7 +18,7 @@ export default function Home() {
                 NoteFlow
               </span>
               <span className="text-xs text-slate-400">
-                Capture. Organize. Remember.
+                Capture. Organize. 
               </span>
             </div>
           </div>

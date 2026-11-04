@@ -2,24 +2,25 @@ import axios from "axios";
 
 export const axiosInstance = axios.create();
 
-let configurationRequest;
+let apiUrlPromise;
 
 axiosInstance.interceptors.request.use(async (config) => {
-  if (!configurationRequest) {
-    configurationRequest = axios.get("/api/config")
+  if (!apiUrlPromise) {
+    apiUrlPromise = axios
+      .get("/api/runtime-config")
       .then(({ data }) => {
-        if (typeof data.baseURL !== "string" || !data.baseURL) {
-          throw new Error("The server returned an invalid API configuration");
+        if (typeof data.apiUrl !== "string" || !data.apiUrl) {
+          throw new Error("The server returned an invalid API URL");
         }
-        return data.baseURL;
+        return data.apiUrl;
       })
       .catch((error) => {
-        configurationRequest = undefined;
-        console.error("Unable to load API configuration", error);
+        apiUrlPromise = undefined;
+        console.error("Failed to load runtime API configuration", error);
         throw error;
       });
   }
 
-  config.baseURL = await configurationRequest;
+  config.baseURL = await apiUrlPromise;
   return config;
 });
