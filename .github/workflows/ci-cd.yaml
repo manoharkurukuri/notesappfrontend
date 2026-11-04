@@ -57,6 +57,8 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: [build, code-quality]
     runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.image.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -69,6 +71,10 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Set published image tag
+        id: image
+        run: echo "tag=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -76,7 +82,7 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: mkurukuri/notes-frontend:${{ github.run_id }}-${{ github.run_attempt }}
+          tags: mkurukuri/notes-frontend:${{ steps.image.outputs.tag }}
 
   update-helm-image-tag:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -92,8 +98,9 @@ jobs:
 
       - name: Update frontend image tag in dev override
         env:
-          IMAGE_TAG: ${{ github.run_id }}-${{ github.run_attempt }}
+          IMAGE_TAG: ${{ needs.docker-build-and-push.outputs.image-tag }}
         run: |
+          : "${IMAGE_TAG:?Missing published image tag}"
           ruby -ryaml -e '
             path = "helm-notes-app/environments/dev/frontend.yaml"
             data = YAML.load_file(path)
@@ -119,8 +126,9 @@ jobs:
 
       - name: Commit and push chart update
         env:
-          IMAGE_TAG: ${{ github.run_id }}-${{ github.run_attempt }}
+          IMAGE_TAG: ${{ needs.docker-build-and-push.outputs.image-tag }}
         run: |
+          : "${IMAGE_TAG:?Missing published image tag}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add helm-notes-app/environments/dev/frontend.yaml
@@ -130,12 +138,23 @@ jobs:
           fi
           git commit -m "ci: deploy frontend image ${IMAGE_TAG}" \
             -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
-          for attempt in 1 2 3; do
-            git pull --rebase origin main
-            if git push origin HEAD:main; then
+          delay=10
+          for attempt in 1 2 3 4 5; do
+            if ! git fetch origin main; then
+              echo "::warning::GitOps fetch attempt ${attempt} failed"
+            elif ! git rebase origin/main; then
+              echo "::error::GitOps rebase failed; resolve conflicts before retrying"
+              exit 1
+            elif git push origin HEAD:main; then
               exit 0
+            else
+              echo "::warning::GitOps push attempt ${attempt} failed"
             fi
-            echo "::warning::GitOps push attempt ${attempt} failed"
+            if [ "$attempt" -lt 5 ]; then
+              echo "Retrying GitOps update in ${delay}s"
+              sleep "$delay"
+              delay=$((delay * 2))
+            fi
           done
-          echo "::error::Unable to push frontend image update"
+          echo "::error::Unable to push frontend image update after 5 attempts; check GitHub status, GITOPS_TOKEN write access, and repository rules"
           exit 1

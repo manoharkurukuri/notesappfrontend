@@ -220,6 +220,13 @@ checks out `manoharkurukuri/devops-helm`, updates only `frontend.image.tag` in
 the update to `main`. This override is the one Argo CD actually reads; updating
 only the base values would leave the dev image tag unchanged.
 
+Both workflows pass the published image tag from the Docker job to the GitOps
+job, so rerunning only a failed GitOps job keeps the already-published tag.
+GitOps fetch/push failures are retried up to five times, with waits of 10, 20,
+40, and 80 seconds. Rebase conflicts stop immediately rather than overwriting
+remote changes. Persistent failures still require checking GitHub status, token
+permissions, and branch rules.
+
 Configure these Actions secrets in the **frontend repository**:
 
 - `DOCKERHUB_USERNAME`: an account authorized to push to
