@@ -139,8 +139,8 @@ Build the production image without environment-specific configuration, then pass
 the API URL when starting the container:
 
 ```bash
-docker build -t mkurukuri/notesappfrontend:v1 .
-docker run --rm -p 3000:3000 --env-file .env mkurukuri/notesappfrontend:v1
+docker build -t mkurukuri/notes-frontend:v1 .
+docker run --rm -p 3000:3000 --env-file .env mkurukuri/notes-frontend:v1
 ```
 
 Open [http://localhost:3000](http://localhost:3000). The container runs the
@@ -151,7 +151,7 @@ Alternatively, pass the URL directly:
 ```bash
 docker run --rm -p 3000:3000 \
   -e API_URL=http://16.113.14.5/api \
-  mkurukuri/notesappfrontend:v1
+  mkurukuri/notes-frontend:v1
 ```
 
 Environment files are excluded from the Docker build context. `API_URL` is
@@ -165,30 +165,19 @@ If your Ingress routes `/api` to the backend, add a more specific route for
 
 ### Kubernetes ConfigMap
 
-The Helm chart creates `notesappfrontend-config` in the release namespace.
-Set its URL in `helm/notesappfrontend/values.yaml`:
+The Helm chart now lives in
+[`manoharkurukuri/devops-helm`](https://github.com/manoharkurukuri/devops-helm),
+under `helm-notes-app`. Set the runtime backend URL in that chart's `values.yaml`:
 
 ```yaml
-configMap:
-  apiUrl: "https://api.example.invalid/api"
+frontend:
+  env:
+    API_URL: "http://192.168.252.12:30080/api"
 ```
 
-The default is deliberately a dummy URL. Replace it with your browser-accessible
-backend URL before using the app. The Deployment already references the ConfigMap:
-
-```yaml
-containers:
-  - name: notesappfrontend
-    image: mkurukuri/notesappfrontend:v1
-    ports:
-      - containerPort: 3000
-    env:
-      - name: API_URL
-        valueFrom:
-          configMapKeyRef:
-            name: notesappfrontend-config
-            key: API_URL
-```
+Use a node address and gateway port reachable from the browser. The URL must end
+in `/api`, not `/api/auth`. The chart creates `<release-name>-frontend-config`
+and loads it into the frontend Deployment.
 
 Commit and push URL changes for Argo CD to sync them. A ConfigMap checksum in the
 Deployment automatically restarts pods when the chart configuration changes;
@@ -198,69 +187,71 @@ every environment without rebuilding.
 
 ### Helm deployment
 
-The chart manages the ConfigMap; no separate ConfigMap creation is needed:
+Argo CD's `fullstack-dev` Application tracks the GitOps repository's `main`
+branch, chart path `helm-notes-app`, and both dev overrides. To validate locally,
+run these commands from the GitOps repository:
 
 ```bash
-helm lint helm/notesappfrontend
-helm upgrade --install notesappfrontend ./helm/notesappfrontend \
-  --namespace notesapp --create-namespace \
-  --set-string configMap.apiUrl=http://16.113.14.5/api --wait
-kubectl -n notesapp port-forward service/notesappfrontend 3000:80
+helm lint helm-notes-app \
+  -f helm-notes-app/environments/dev/frontend.yaml \
+  -f helm-notes-app/environments/dev/backend.yaml
+helm template fullstack helm-notes-app --namespace devops-app \
+  -f helm-notes-app/environments/dev/frontend.yaml \
+  -f helm-notes-app/environments/dev/backend.yaml
 ```
 
-The chart uses the image tag committed by CI (the GitHub Actions run ID).
-The workflow builds both amd64 and arm64 images and updates the chart
-tag, but applying that chart still requires Helm or a GitOps controller.
-
-The Service defaults to NodePort: node port 30081 forwards through Service port
-80 to container port 3000. After Argo CD syncs, run `kubectl get nodes -o wide`
-and open `http://<reachable-node-ip>:30081`. For Multipass, use a reachable VM/node
-IP, not the Service ClusterIP. Node networking and firewalls must allow TCP 30081.
-Set `service.nodePort` to another unused port in the cluster's NodePort range
-(normally 30000-32767) if needed. Set `service.type: ClusterIP` to disable NodePort
-exposure; port-forwarding still works.
-
-Overriding
-`containerPort` also updates the server's `PORT` environment variable; do not
-set `PORT` separately in `env`. Startup and liveness probes check `/`, while
-readiness checks `/api/runtime-config` so invalid API configuration prevents
-traffic from reaching the pod without causing a restart loop.
-
-No custom ServiceAccount is created, and service account token mounting is
-disabled. Containers run as UID/GID 1000 with a read-only root filesystem and
-writable temporary/cache volumes. Resource requests and limits are starting
-values; measure memory and CPU under your expected load before production.
-
-Autoscaling is disabled by default. Enable it with
-`--set autoscaling.enabled=true` only when resource metrics are available in the
-cluster. Ingress and HTTPRoute are also disabled by default; configure the
-matching controller/Gateway and a real hostname before enabling either.
-After a chart-managed ConfigMap update, pods roll out automatically; reload the
-browser. Readiness validates the URL format, not backend connectivity, so the
-dummy URL allows startup but does not provide working API requests.
+The local chart uses Envoy Gateway with NodePort `30080` and internal ClusterIP
+app Services. Open `http://192.168.252.12:30080` after sync. If the gateway port
+changes, update `frontend.env.API_URL` as well. The HTTPRoute sends `/api` to the
+backend but keeps `/api/runtime-config` and `/api/config` on the frontend.
 
 ## GitHub Actions
 
-The frontend workflow builds the app, runs ESLint, and audits dependencies for
-high/critical findings on application pushes and pull requests targeting `main`.
-Runtime configuration tests are available through `npm test`; the workflow does
-not currently run them. Manual runs on other branches validate the app but cannot publish an
-image or change the chart on `main`.
+The workflow in `.github/workflows/ci-cd.yaml` installs dependencies, runs
+`npm test`, builds the app, runs ESLint, and audits dependencies for high/critical
+findings on pushes and pull requests targeting `main`. CI uses Node.js 24 to
+match the Docker image. Manual runs on other branches validate the app but
+cannot publish an image or change the GitOps repository.
 
-Successful runs on `main` publish a multi-platform Docker image and commit its
-tag to the Helm values. Configure these repository Actions secrets:
+Successful runs on `main` publish
+`mkurukuri/notes-frontend:<run-id>-<run-attempt>` for amd64 and arm64. CI then
+checks out `manoharkurukuri/devops-helm`, updates only `frontend.image.tag` in
+`helm-notes-app/environments/dev/frontend.yaml`, validates the chart, and pushes
+the update to `main`. This override is the one Argo CD actually reads; updating
+only the base values would leave the dev image tag unchanged.
+
+Configure these Actions secrets in the **frontend repository**:
 
 - `DOCKERHUB_USERNAME`: an account authorized to push to
-  `mkurukuri/notesappfrontend`.
+  `mkurukuri/notes-frontend`.
 - `DOCKERHUB_TOKEN`: a Docker Hub access token with read/write permission.
+- `GITOPS_TOKEN`: a fine-grained GitHub token restricted to
+  `manoharkurukuri/devops-helm` with **Contents: read and write**. The frontend's
+  default `GITHUB_TOKEN` cannot push to another repository.
 
-The chart-update job needs permission to push to `main`. Repository rules or
-branch protection may require a pull-request-based update instead. No Kubernetes
-credentials are used: deployment still requires Helm or a GitOps controller.
+The backend `NotesApi` workflow needs the same three secret names. Use
+`mkurukuri` for `DOCKERHUB_USERNAME` if publishing with that Docker Hub account,
+and tokens authorized for the corresponding image repository. Separate tokens
+per source repository are recommended. Neither workflow requires repository
+Actions variables: image repositories, GitOps repository, branch, and chart
+paths are already configured in the workflows.
 
-Chart-only changes run the separate Helm-check workflow without rebuilding the
-image. It lints and renders the default chart and the optional autoscaling,
-Ingress, and HTTPRoute configurations.
+The backend publishes `mkurukuri/notes-backend:<run-id>-<run-attempt>` and updates
+`backend.image.tag` in `helm-notes-app/environments/dev/backend.yaml`. Its CI runs
+Java 21 tests against a temporary MongoDB service with a public test-only JWT
+key. Production `DB_URL` and `JWT_SECRET` stay in AWS Secrets Manager and are
+synced by External Secrets Operator into `backend-secrets` in `devops-app`.
+Do not add these production values or AWS access keys to either CI workflow.
+
+The GitOps token owner must be allowed to push to `devops-helm/main`; if branch
+protection requires pull requests, adapt the workflow to open a PR instead.
+Never commit tokens. No Kubernetes or AWS credentials are needed in this
+workflow: Argo CD polls Git and deploys the updated tag.
+
+Helm validation now lives in `.github/workflows/helm-check.yml` in the GitOps
+repository and runs for chart changes, including CI's image-tag commits. Commit
+and push that workflow in `devops-helm` separately; there is no Helm chart left
+in this frontend repository.
 
 ## Learn More
 
